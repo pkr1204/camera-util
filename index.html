@@ -2,19 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Reliable Camera Utility</title>
+  <title>Camera Utility Demo</title>
   <style>
     body { text-align: center; background: #f0f0f0; font-family: sans-serif; }
-    video, canvas { display: block; margin: 20px auto; max-width: 90%; border: 2px solid #333; }
+    video, canvas { display: block; margin: 20px auto; max-width: 90%; }
     button { margin: 10px; padding: 10px 20px; font-size: 16px; }
-    #info { margin: 20px; font-size: 18px; }
   </style>
 </head>
 <body>
 
-<h1>📸 Reliable Camera Utility</h1>
-<div id="info">No camera active</div>
-
+<h1>Camera Utility Demo</h1>
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas"></canvas>
 
@@ -28,180 +25,72 @@
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
-  const info = document.getElementById('info');
-  let videoDevices = [];
 
-  // Stop any active stream
+  // Stop existing stream if active
   function stopStream() {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
     }
   }
 
-  // Load available video devices on page load
-  async function loadDevices() {
-    try {
-      // First get user media to ensure permissions
-      await navigator.mediaDevices.getUserMedia({ video: true });
-      
-      // Then enumerate devices
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      videoDevices = devices.filter(device => device.kind === 'videoinput');
-      
-      console.log('Available Video Devices:');
-      videoDevices.forEach((device, index) => {
-        console.log(`${index}: ${device.label || `Camera ${index + 1}`} (${device.deviceId})`);
-      });
-      
-      if (videoDevices.length === 0) {
-        console.warn('No video devices found');
-      }
-    } catch (err) {
-      console.error('Error loading devices:', err);
-      alert('Error accessing camera devices: ' + err.message);
-    }
-  }
-
-  // Start camera by deviceId
-  async function startCameraByDeviceId(deviceId, label = 'Camera') {
+  async function startCamera(facingMode) {
     stopStream();
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: deviceId, width: { ideal: 4096 }, height: { ideal: 2160 } },
+        video: { facingMode: facingMode },
         audio: false
       });
       video.srcObject = stream;
-
-      const track = stream.getVideoTracks()[0];
-      const settings = track.getSettings();
-      info.textContent = `🎥 Active: ${label} — ${settings.width} x ${settings.height}`;
     } catch (err) {
       alert('Camera not available: ' + err.message);
-      console.error(err);
     }
   }
 
-  // Start Front Camera
   function startFrontCamera() {
-    const front = videoDevices.find(device =>
-      device.label.toLowerCase().includes('front')
-    ) || videoDevices[0];
-    if (!front) return alert('No front camera found!');
-    startCameraByDeviceId(front.deviceId, 'Front Camera');
+    startCamera('user');
   }
 
-  // Start Back Camera
-  async function startBackCamera() {
-    try {
-      if (videoDevices.length === 0) {
-        await loadDevices(); // Ensure devices are loaded
-      }
-
-      // First try to find by facingMode if supported
-      for (const device of videoDevices) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { 
-              deviceId: { exact: device.deviceId },
-              facingMode: { ideal: ['environment'] }
-            },
-            audio: false
-          });
-          
-          // If we got here, we successfully opened a back camera
-          stream.getTracks().forEach(t => t.stop());
-          return await startCameraByDeviceId(device.deviceId, 'Back Camera');
-        } catch (e) {
-          // Try next device
-          console.log(`Device ${device.label} is not a back camera`);
-        }
-      }
-
-      // If facingMode not supported, try by label
-      const backKeywords = ['back', 'rear', 'environment', '1', 'bck', 'wk'];
-      const frontKeywords = ['front', 'user', 'face', '0', 'facing'];
-
-      let backCameras = videoDevices.filter(device => {
-        if (!device.label) return false;
-        const label = device.label.toLowerCase();
-        return backKeywords.some(kw => label.includes(kw)) &&
-               !frontKeywords.some(kw => label.includes(kw));
-      });
-
-      // If no back camera found by label, try to find by exclusion
-      if (backCameras.length === 0 && videoDevices.length > 1) {
-        // If we have multiple cameras and one is clearly front, the other is likely back
-        const frontCameras = videoDevices.filter(device => 
-          device.label && frontKeywords.some(kw => device.label.toLowerCase().includes(kw))
-        );
-        
-        if (frontCameras.length > 0) {
-          backCameras = videoDevices.filter(device => 
-            !frontCameras.some(front => front.deviceId === device.deviceId)
-          );
-        } else {
-          // If we can't determine, try the last device (often the back camera)
-          backCameras = [videoDevices[videoDevices.length - 1]];
-        }
-      }
-
-      if (backCameras.length > 0) {
-        console.log('Selected back camera:', backCameras[0].label);
-        return await startCameraByDeviceId(backCameras[0].deviceId, 'Back Camera');
-      }
-
-      throw new Error('No back camera found');
-    } catch (err) {
-      console.error('Back camera error:', err);
-      alert('Could not access back camera: ' + err.message);
-    }
+  function startBackCamera() {
+    startCamera({ exact: 'environment' });
   }
 
-  // Start High-Res Camera (best resolution from available cameras)
   async function startHighResCamera() {
     stopStream();
+    const constraintsList = [
+      { width: { ideal: 4096 }, height: { ideal: 2160 }, facingMode: 'user' },
+      { width: { ideal: 4096 }, height: { ideal: 2160 }, facingMode: { exact: 'environment' } }
+    ];
 
     let bestStream = null;
     let bestResolution = 0;
-    let bestLabel = 'Unknown Camera';
 
-    for (let device of videoDevices) {
+    for (let constraint of constraintsList) {
       try {
-        let testStream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: device.deviceId, width: { ideal: 4096 }, height: { ideal: 2160 } },
-          audio: false
-        });
+        let testStream = await navigator.mediaDevices.getUserMedia({ video: constraint });
         const track = testStream.getVideoTracks()[0];
         const settings = track.getSettings();
         const resolution = settings.width * settings.height;
-        console.log(`Camera: ${device.label} — ${settings.width} x ${settings.height}`);
 
         if (resolution > bestResolution) {
           if (bestStream) bestStream.getTracks().forEach(t => t.stop());
           bestStream = testStream;
           bestResolution = resolution;
-          bestLabel = device.label;
         } else {
           testStream.getTracks().forEach(t => t.stop());
         }
       } catch (err) {
-        console.log('Could not access', device.label, err);
+        console.log('Constraint failed:', constraint, err);
       }
     }
 
     if (bestStream) {
       stream = bestStream;
       video.srcObject = stream;
-      const track = stream.getVideoTracks()[0];
-      const settings = track.getSettings();
-      info.textContent = `🎥 Active: ${bestLabel} — ${settings.width} x ${settings.height}`;
     } else {
-      alert('No camera available!');
-      info.textContent = 'No camera active';
+      alert('No suitable camera found!');
     }
   }
 
-  // Capture current frame to canvas
   function capturePhoto() {
     if (!stream) {
       alert('Start a camera first!');
@@ -213,15 +102,6 @@
     canvas.height = settings.height;
     ctx.drawImage(video, 0, 0, settings.width, settings.height);
   }
-
-  // Load devices immediately after permission
-  navigator.mediaDevices.getUserMedia({ video: true }).then(() => {
-    loadDevices();
-  }).catch(err => {
-    alert('Camera permission is required to detect devices.');
-    console.error(err);
-  });
-
 </script>
 
 </body>
