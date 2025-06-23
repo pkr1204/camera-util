@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Camera Utility Demo</title>
+  <style>
+    body { text-align: center; background: #f0f0f0; font-family: sans-serif; }
+    video, canvas { display: block; margin: 20px auto; max-width: 90%; }
+    button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+  </style>
+</head>
+<body>
+
+<h1>Camera Utility Demo</h1>
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<button onclick="startFrontCamera()">Front Camera</button>
+<button onclick="startBackCamera()">Back Camera</button>
+<button onclick="startHighResCamera()">High-Res Camera</button>
+<button onclick="capturePhoto()">Capture Photo</button>
+
+<script>
+  let stream;
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Stop existing stream if active
+  function stopStream() {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+  }
+
+  async function startCamera(facingMode) {
+    stopStream();
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facingMode },
+        audio: false
+      });
+      video.srcObject = stream;
+    } catch (err) {
+      alert('Camera not available: ' + err.message);
+    }
+  }
+
+  function startFrontCamera() {
+    startCamera('user');
+  }
+
+  function startBackCamera() {
+    startCamera({ exact: 'environment' });
+  }
+
+  async function startHighResCamera() {
+    stopStream();
+    const constraintsList = [
+      { width: { ideal: 4096 }, height: { ideal: 2160 }, facingMode: 'user' },
+      { width: { ideal: 4096 }, height: { ideal: 2160 }, facingMode: { exact: 'environment' } }
+    ];
+
+    let bestStream = null;
+    let bestResolution = 0;
+
+    for (let constraint of constraintsList) {
+      try {
+        let testStream = await navigator.mediaDevices.getUserMedia({ video: constraint });
+        const track = testStream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        const resolution = settings.width * settings.height;
+
+        if (resolution > bestResolution) {
+          if (bestStream) bestStream.getTracks().forEach(t => t.stop());
+          bestStream = testStream;
+          bestResolution = resolution;
+        } else {
+          testStream.getTracks().forEach(t => t.stop());
+        }
+      } catch (err) {
+        console.log('Constraint failed:', constraint, err);
+      }
+    }
+
+    if (bestStream) {
+      stream = bestStream;
+      video.srcObject = stream;
+    } else {
+      alert('No suitable camera found!');
+    }
+  }
+
+  function capturePhoto() {
+    if (!stream) {
+      alert('Start a camera first!');
+      return;
+    }
+    const track = stream.getVideoTracks()[0];
+    const settings = track.getSettings();
+    canvas.width = settings.width;
+    canvas.height = settings.height;
+    ctx.drawImage(video, 0, 0, settings.width, settings.height);
+  }
+</script>
+
+</body>
+</html>
