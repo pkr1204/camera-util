@@ -93,31 +93,67 @@
   // Start Back Camera
   async function startBackCamera() {
     try {
-      // First try to find a back camera using common labels
-      let back = videoDevices.find(device => {
+      if (videoDevices.length === 0) {
+        await loadDevices(); // Ensure devices are loaded
+      }
+
+      // First try to find by facingMode if supported
+      for (const device of videoDevices) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { 
+              deviceId: { exact: device.deviceId },
+              facingMode: { ideal: ['environment'] }
+            },
+            audio: false
+          });
+          
+          // If we got here, we successfully opened a back camera
+          stream.getTracks().forEach(t => t.stop());
+          return await startCameraByDeviceId(device.deviceId, 'Back Camera');
+        } catch (e) {
+          // Try next device
+          console.log(`Device ${device.label} is not a back camera`);
+        }
+      }
+
+      // If facingMode not supported, try by label
+      const backKeywords = ['back', 'rear', 'environment', '1', 'bck', 'wk'];
+      const frontKeywords = ['front', 'user', 'face', '0', 'facing'];
+
+      let backCameras = videoDevices.filter(device => {
+        if (!device.label) return false;
         const label = device.label.toLowerCase();
-        return label.includes('back') || 
-               label.includes('rear') || 
-               label.includes('environment') ||
-               label.includes('1');  // Sometimes back camera is device 1
+        return backKeywords.some(kw => label.includes(kw)) &&
+               !frontKeywords.some(kw => label.includes(kw));
       });
 
-      // If no back camera found, try to get the second camera (if multiple exist)
-      if (!back && videoDevices.length > 1) {
-        back = videoDevices[1]; // Often the second camera is the back one
-      } else if (!back) {
-        back = videoDevices[0]; // Fallback to first camera if only one exists
+      // If no back camera found by label, try to find by exclusion
+      if (backCameras.length === 0 && videoDevices.length > 1) {
+        // If we have multiple cameras and one is clearly front, the other is likely back
+        const frontCameras = videoDevices.filter(device => 
+          device.label && frontKeywords.some(kw => device.label.toLowerCase().includes(kw))
+        );
+        
+        if (frontCameras.length > 0) {
+          backCameras = videoDevices.filter(device => 
+            !frontCameras.some(front => front.deviceId === device.deviceId)
+          );
+        } else {
+          // If we can't determine, try the last device (often the back camera)
+          backCameras = [videoDevices[videoDevices.length - 1]];
+        }
       }
 
-      if (!back) {
-        throw new Error('No cameras found');
+      if (backCameras.length > 0) {
+        console.log('Selected back camera:', backCameras[0].label);
+        return await startCameraByDeviceId(backCameras[0].deviceId, 'Back Camera');
       }
 
-      console.log('Attempting to start back camera:', back.label);
-      await startCameraByDeviceId(back.deviceId, 'Back Camera');
+      throw new Error('No back camera found');
     } catch (err) {
       console.error('Back camera error:', err);
-      alert('Error accessing back camera: ' + err.message);
+      alert('Could not access back camera: ' + err.message);
     }
   }
 
