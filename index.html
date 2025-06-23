@@ -40,9 +40,26 @@
 
   // Load available video devices on page load
   async function loadDevices() {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    videoDevices = devices.filter(device => device.kind === 'videoinput');
-    console.log('Video Devices:', videoDevices);
+    try {
+      // First get user media to ensure permissions
+      await navigator.mediaDevices.getUserMedia({ video: true });
+      
+      // Then enumerate devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      videoDevices = devices.filter(device => device.kind === 'videoinput');
+      
+      console.log('Available Video Devices:');
+      videoDevices.forEach((device, index) => {
+        console.log(`${index}: ${device.label || `Camera ${index + 1}`} (${device.deviceId})`);
+      });
+      
+      if (videoDevices.length === 0) {
+        console.warn('No video devices found');
+      }
+    } catch (err) {
+      console.error('Error loading devices:', err);
+      alert('Error accessing camera devices: ' + err.message);
+    }
   }
 
   // Start camera by deviceId
@@ -74,13 +91,34 @@
   }
 
   // Start Back Camera
-  function startBackCamera() {
-    const back = videoDevices.find(device =>
-      device.label.toLowerCase().includes('back') ||
-      device.label.toLowerCase().includes('environment')
-    );
-    if (!back) return alert('No back camera found!');
-    startCameraByDeviceId(back.deviceId, 'Back Camera');
+  async function startBackCamera() {
+    try {
+      // First try to find a back camera using common labels
+      let back = videoDevices.find(device => {
+        const label = device.label.toLowerCase();
+        return label.includes('back') || 
+               label.includes('rear') || 
+               label.includes('environment') ||
+               label.includes('1');  // Sometimes back camera is device 1
+      });
+
+      // If no back camera found, try to get the second camera (if multiple exist)
+      if (!back && videoDevices.length > 1) {
+        back = videoDevices[1]; // Often the second camera is the back one
+      } else if (!back) {
+        back = videoDevices[0]; // Fallback to first camera if only one exists
+      }
+
+      if (!back) {
+        throw new Error('No cameras found');
+      }
+
+      console.log('Attempting to start back camera:', back.label);
+      await startCameraByDeviceId(back.deviceId, 'Back Camera');
+    } catch (err) {
+      console.error('Back camera error:', err);
+      alert('Error accessing back camera: ' + err.message);
+    }
   }
 
   // Start High-Res Camera (best resolution from available cameras)
