@@ -5,13 +5,16 @@
   <title>Camera Utility Demo</title>
   <style>
     body { text-align: center; background: #f0f0f0; font-family: sans-serif; }
-    video, canvas { display: block; margin: 20px auto; max-width: 90%; }
+    video, canvas { display: block; margin: 20px auto; max-width: 90%; border: 2px solid #333; }
     button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+    #info { margin: 20px; font-size: 18px; }
   </style>
 </head>
 <body>
 
-<h1>Camera Utility Demo</h1>
+<h1>📸 Camera Utility Demo</h1>
+<div id="info">No camera active</div>
+
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas"></canvas>
 
@@ -25,44 +28,51 @@
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
+  const info = document.getElementById('info');
 
-  // Stop existing stream if active
   function stopStream() {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
     }
   }
 
-  async function startCamera(facingMode) {
+  async function startCamera(facingMode, label = 'Camera') {
     stopStream();
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facingMode },
+        video: { facingMode: facingMode, width: { ideal: 4096 }, height: { ideal: 2160 } },
         audio: false
       });
       video.srcObject = stream;
+
+      const track = stream.getVideoTracks()[0];
+      const settings = track.getSettings();
+      info.textContent = `🎥 Active: ${label} — ${settings.width} x ${settings.height}`;
+
     } catch (err) {
       alert('Camera not available: ' + err.message);
+      console.error(err);
     }
   }
 
   function startFrontCamera() {
-    startCamera('user');
+    startCamera('user', 'Front Camera');
   }
 
   function startBackCamera() {
-    startCamera({ exact: 'environment' });
+    startCamera('environment', 'Back Camera');
   }
 
   async function startHighResCamera() {
     stopStream();
     const constraintsList = [
-      { width: { ideal: 4096 }, height: { ideal: 2160 }, facingMode: 'user' },
-      { width: { ideal: 4096 }, height: { ideal: 2160 }, facingMode: { exact: 'environment' } }
+      { width: { ideal: 4096 }, height: { ideal: 2160 }, facingMode: 'environment' },
+      { width: { ideal: 4096 }, height: { ideal: 2160 }, facingMode: 'user' }
     ];
 
     let bestStream = null;
     let bestResolution = 0;
+    let bestLabel = 'Unknown Camera';
 
     for (let constraint of constraintsList) {
       try {
@@ -70,11 +80,13 @@
         const track = testStream.getVideoTracks()[0];
         const settings = track.getSettings();
         const resolution = settings.width * settings.height;
+        console.log('Got stream with constraint:', constraint, 'Resolution:', settings.width, 'x', settings.height);
 
         if (resolution > bestResolution) {
           if (bestStream) bestStream.getTracks().forEach(t => t.stop());
           bestStream = testStream;
           bestResolution = resolution;
+          bestLabel = constraint.facingMode === 'environment' ? 'Back Camera' : 'Front Camera';
         } else {
           testStream.getTracks().forEach(t => t.stop());
         }
@@ -86,8 +98,12 @@
     if (bestStream) {
       stream = bestStream;
       video.srcObject = stream;
+      const track = stream.getVideoTracks()[0];
+      const settings = track.getSettings();
+      info.textContent = `🎥 Active: ${bestLabel} — ${settings.width} x ${settings.height}`;
     } else {
       alert('No suitable camera found!');
+      info.textContent = 'No camera active';
     }
   }
 
